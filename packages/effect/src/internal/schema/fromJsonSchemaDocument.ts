@@ -596,7 +596,7 @@ function translateJsonSchemaMultiDocument(
       case "Suspend":
         return hasChoices(representation.thunk as ImportedJsonSchemaRepresentation)
       case "Union":
-        return representation.types.length > 1 ||
+        return representation.types.length > 1 && !isLiteralSet(representation) ||
           representation.types.some((type) => hasChoices(type as ImportedJsonSchemaRepresentation))
       case "Arrays":
         return representation.elements.some((element) =>
@@ -643,6 +643,10 @@ function translateJsonSchemaMultiDocument(
     return typeof literal === "string" || typeof literal === "number" || typeof literal === "boolean"
       ? literal
       : undefined
+  }
+
+  function isLiteralSet(union: SchemaRepresentation.Union): boolean {
+    return union.types.every((type) => literalValue(type as ImportedJsonSchemaRepresentation) !== undefined)
   }
 
   function intersectLiteralUnions(

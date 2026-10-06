@@ -335,6 +335,144 @@ describe("fromJsonSchemaDocument", () => {
     )
   })
 
+  it("oneOf with siblings narrowing an enum property", () => {
+    assertFromJsonSchema(
+      {
+        schema: {
+          type: "object",
+          properties: { kind: { enum: ["x", "y"] } },
+          oneOf: [
+            { properties: { kind: { const: "x" } } },
+            { properties: { kind: { const: "y" } } }
+          ]
+        }
+      },
+      {
+        codes: makeCode(
+          `Schema.Union([Schema.StructWithRest(Schema.Struct({ "kind": Schema.optionalKey(Schema.Literal("x")) }), [Schema.Record(Schema.String, Schema.Json.annotate({ "expected": "JSON value" }))]), Schema.StructWithRest(Schema.Struct({ "kind": Schema.optionalKey(Schema.Literal("y")) }), [Schema.Record(Schema.String, Schema.Json.annotate({ "expected": "JSON value" }))])], { mode: "oneOf" })`,
+          `{ readonly "kind"?: "x" } & { readonly [x: string]: Schema.Json } | { readonly "kind"?: "y" } & { readonly [x: string]: Schema.Json }`
+        )
+      }
+    )
+  })
+
+  it("anyOf with siblings narrowing an enum property", () => {
+    assertFromJsonSchema(
+      {
+        schema: {
+          type: "object",
+          properties: { kind: { enum: ["x", "y"] } },
+          anyOf: [
+            { properties: { kind: { const: "x" } } },
+            { properties: { kind: { const: "y" } } }
+          ]
+        }
+      },
+      {
+        codes: makeCode(
+          `Schema.Union([Schema.StructWithRest(Schema.Struct({ "kind": Schema.optionalKey(Schema.Literal("x")) }), [Schema.Record(Schema.String, Schema.Json.annotate({ "expected": "JSON value" }))]), Schema.StructWithRest(Schema.Struct({ "kind": Schema.optionalKey(Schema.Literal("y")) }), [Schema.Record(Schema.String, Schema.Json.annotate({ "expected": "JSON value" }))])])`,
+          `{ readonly "kind"?: "x" } & { readonly [x: string]: Schema.Json } | { readonly "kind"?: "y" } & { readonly [x: string]: Schema.Json }`
+        )
+      }
+    )
+  })
+
+  it("drops oneOf branches whose const is not a member of the enum property", () => {
+    assertFromJsonSchema(
+      {
+        schema: {
+          type: "object",
+          properties: { kind: { enum: ["x", "y"] } },
+          required: ["kind"],
+          additionalProperties: false,
+          oneOf: [
+            { properties: { kind: { const: "x" } } },
+            { properties: { kind: { const: "z" } } }
+          ]
+        }
+      },
+      { codes: makeCode(`Schema.Struct({ "kind": Schema.Literal("x") })`, `{ readonly "kind": "x" }`) }
+    )
+  })
+
+  it("oneOf with siblings narrowing an enum property to overlapping enums", () => {
+    assertFromJsonSchema(
+      {
+        schema: {
+          type: "object",
+          properties: { kind: { enum: ["x", "y", "z"] } },
+          required: ["kind"],
+          additionalProperties: false,
+          oneOf: [
+            { properties: { kind: { enum: ["x", "y"] } } },
+            { properties: { kind: { enum: ["z", "w"] } } }
+          ]
+        }
+      },
+      {
+        codes: makeCode(
+          `Schema.Union([Schema.Struct({ "kind": Schema.Literals(["x", "y"]) }), Schema.Struct({ "kind": Schema.Literal("z") })], { mode: "oneOf" })`,
+          `{ readonly "kind": "x" | "y" } | { readonly "kind": "z" }`
+        )
+      }
+    )
+  })
+
+  it("oneOf with siblings narrowing a nested enum property", () => {
+    assertFromJsonSchema(
+      {
+        schema: {
+          type: "object",
+          properties: {
+            meta: {
+              type: "object",
+              properties: { kind: { enum: ["x", "y"] } },
+              required: ["kind"],
+              additionalProperties: false
+            }
+          },
+          required: ["meta"],
+          additionalProperties: false,
+          oneOf: [
+            { properties: { meta: { properties: { kind: { const: "x" } } } } },
+            { properties: { meta: { properties: { kind: { const: "y" } } } } }
+          ]
+        }
+      },
+      {
+        codes: makeCode(
+          `Schema.Union([Schema.Struct({ "meta": Schema.Struct({ "kind": Schema.Literal("x") }) }), Schema.Struct({ "meta": Schema.Struct({ "kind": Schema.Literal("y") }) })], { mode: "oneOf" })`,
+          `{ readonly "meta": { readonly "kind": "x" } } | { readonly "meta": { readonly "kind": "y" } }`
+        )
+      }
+    )
+  })
+
+  it("rejects oneOf branches that would duplicate a non-literal choice next to an enum property", () => {
+    throws(
+      () =>
+        toSchemaFromJsonSchemaDocument(
+          JsonSchema.fromSchemaDraft2020_12({
+            type: "object",
+            properties: {
+              kind: { enum: ["x", "y"] },
+              payload: {
+                anyOf: [
+                  { type: "object", properties: { a: { type: "string" } }, required: ["a"] },
+                  { type: "object", properties: { b: { type: "string" } }, required: ["b"] }
+                ]
+              }
+            },
+            oneOf: [
+              { properties: { kind: { const: "x" } } },
+              { properties: { kind: { const: "y" } } }
+            ]
+          })
+        ),
+      `Cannot intersect these "anyOf" or "oneOf" alternatives without expanding their branches.\n  at ["schema"]["oneOf"]`
+    )
+  })
+
   describe("type: null", () => {
     it("type only", () => {
       assertFromJsonSchema(

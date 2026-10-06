@@ -118,6 +118,25 @@ export const A = Schema.String.annotate({ "description": "desc", "examples": ["e
     expect(result).toContain("export const Choice = Schema.Never")
   })
 
+  it("narrows an enum property with oneOf branches", () => {
+    const generator = JsonSchemaGenerator.make()
+    generator.addSchema("Choice", {
+      type: "object",
+      properties: { kind: { type: "string", enum: ["x", "y"] } },
+      required: ["kind"],
+      oneOf: [
+        { properties: { kind: { const: "x" } } },
+        { properties: { kind: { const: "y" } } }
+      ]
+    })
+
+    const result = generator.generate("openapi-3.1", definitions, false)
+
+    expect(result).toContain(
+      `export const Choice = Schema.Union([Schema.StructWithRest(Schema.Struct({ "kind": Schema.Literal("x") }), [Schema.Record(Schema.String, Schema.Json.annotate({ "expected": "JSON value" }))]), Schema.StructWithRest(Schema.Struct({ "kind": Schema.Literal("y") }), [Schema.Record(Schema.String, Schema.Json.annotate({ "expected": "JSON value" }))])], { mode: "oneOf" })`
+    )
+  })
+
   it("generateHttpApi emits explicit type and const declarations", () => {
     const generator = JsonSchemaGenerator.make()
     generator.addSchema("A", { type: "string" })
